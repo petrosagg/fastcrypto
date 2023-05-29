@@ -501,3 +501,36 @@ fn test_invalid_nonrecoverable_conversion() {
     )
     .is_err());
 }
+
+#[test]
+fn test_recoverable_id_gt_1() {
+    let kp = keys().pop().unwrap();
+    let message: &[u8] = b"Hello, world!";
+    let signature = kp.sign(message);
+    let der_signature: Vec<u8> = signature.sig.serialize_der().as_ref().to_vec();
+    let mut modified_signature = Signature::from_der(der_signature.as_slice()).unwrap();
+    for i in 0..32 {
+        modified_signature.0 .0[i] = 0x00;
+    }
+
+    let mut rng = StdRng::from_seed([0; 32]);
+    for _ in 0..100 {
+        let r = rng.next_u32();
+        let r: [u8; 4] = r.to_le_bytes();
+        modified_signature.0 .0[0] = r[0];
+        modified_signature.0 .0[1] = r[1];
+        modified_signature.0 .0[2] = r[2];
+        modified_signature.0 .0[3] = r[3];
+
+        let mut recoverable_signature_bytes = [0u8; 65];
+        recoverable_signature_bytes[0..64].copy_from_slice(&modified_signature.serialize_compact());
+        for i in 2..4 {
+            recoverable_signature_bytes[64] = i;
+            let recoverable_signature =
+                Secp256k1RecoverableSignature::from_bytes(&recoverable_signature_bytes).unwrap();
+            if let Ok(recovered_pk) = recoverable_signature.recover(&message) {
+                println!("recid={i} pk={recovered_pk} signature={recoverable_signature}");
+            }
+        }
+    }
+}
